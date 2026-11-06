@@ -42,7 +42,7 @@ jobs:
           done
           dagger --progress=plain -m "github.com/context-and-oss/cicd/src/quality@$SOURCE_COMMIT" call test \
             --src ./go-app \
-            --test-cmd 'go test -json -coverprofile=/tmp/coverage.out ./...' \
+            --test-cmd 'go test -v -coverprofile=/tmp/coverage.out ./...' \
             --coverage-path /tmp/coverage.out \
             --repo-url "https://github.com/$GITHUB_REPOSITORY" \
             --commit-sha "$GITHUB_SHA" \
