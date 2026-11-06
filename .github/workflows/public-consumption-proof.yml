@@ -61,9 +61,10 @@ jobs:
           assert evidence['passed'] is True
           assert evidence.get('errors', []) == []
           assert evidence['repo']['commitSha'] == os.environ['GITHUB_SHA']
-          tests = evidence['tests']
+          tests = evidence['testsByLanguage']['go']
           assert type(tests['passed']) is int and tests['passed'] > 0
           assert tests['failed'] == 0
+          assert tests['skipped'] == 0
           assert tests['total'] == tests['passed'] + tests['skipped']
           assert type(evidence['coveragePercent']) in (int, float)
           print('Public-source fixture execution and evidence grading passed.')
