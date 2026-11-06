@@ -1,0 +1,70 @@
+name: Public consumption proof
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_COMMIT: e510ca0bff49e501bdb77cbdb6b12eb0bf10c447
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_SYSTEM: /dev/null
+      GIT_CONFIG_NOSYSTEM: '1'
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: Obtain only released public source fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -c credential.helper= -c http.extraHeader= clone --depth 1 --branch v5.1.5 https://github.com/context-and-oss/cicd.git released-source
+          test "$(git -C released-source rev-parse HEAD)" = "$SOURCE_COMMIT"
+          cp -R released-source/testdata/go-app go-app
+
+      - name: Use the released public installer action
+        uses: context-and-oss/cicd/.github/actions/install-dagger@e510ca0bff49e501bdb77cbdb6b12eb0bf10c447 # v5.1.5
+        with:
+          version: '0.20.8'
+
+      - name: Execute the released quality module without source credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in GH_TOKEN GITHUB_TOKEN DAGGER_CLOUD_TOKEN SSH_AUTH_SOCK; do
+            if [ -n "${!variable:-}" ]; then
+              echo 'Unexpected credential or agent in the proof environment' >&2
+              exit 1
+            fi
+          done
+          dagger --progress=plain -m "github.com/context-and-oss/cicd/src/quality@$SOURCE_COMMIT" call test \
+            --src ./go-app \
+            --test-cmd 'go test -json -coverprofile=/tmp/coverage.out ./...' \
+            --coverage-path /tmp/coverage.out \
+            --repo-url "https://github.com/$GITHUB_REPOSITORY" \
+            --commit-sha "$GITHUB_SHA" \
+            --branch "$GITHUB_REF_NAME" \
+            export --path evidence-quality.json
+
+      - name: Grade measured fixture evidence, not export success
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          with open('evidence-quality.json') as stream:
+              evidence = json.load(stream)
+          assert evidence['schemaVersion'].startswith('1.')
+          assert evidence['passed'] is True
+          assert evidence.get('errors', []) == []
+          assert evidence['repo']['commitSha'] == os.environ['GITHUB_SHA']
+          tests = evidence['tests']
+          assert type(tests['passed']) is int and tests['passed'] > 0
+          assert tests['failed'] == 0
+          assert tests['total'] == tests['passed'] + tests['skipped']
+          assert type(evidence['coveragePercent']) in (int, float)
+          print('Public-source fixture execution and evidence grading passed.')
+          PY
